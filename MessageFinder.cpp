@@ -11,7 +11,6 @@
 
 #include <cstdint>
 #include "pcap.h"
-using namespace std;
 
 #define ETHER_ADDR_LEN	6
 #define SIZE_ETHERNET 14
@@ -83,17 +82,18 @@ int main(int argc, char *argv[])
 		std::cout << "Podaj sciezke pliku pcap jako argument" << std::endl;
 		//return 0;
 	}
-	string file = argv[1];
+
+	std::string file = argv[1];
 	std::cout << file << std::endl;
 	char errbuff[PCAP_ERRBUF_SIZE];
 	handle = pcap_open_offline(file.c_str(), errbuff);
 	if (handle == NULL) {
-		fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
-		return(2);
+		std::cerr << "Couldn't open pcap file: " << errbuff << std::endl;
+		exit(EXIT_FAILURE);
 	}
 
-	int packet_det = 0;
-	int packet_num = 0;
+	int packet_det = 0; // detected packets with hidden transmission
+	int packet_num = 0; // total number of red packets
 	unsigned char id_last = 0;
 	unsigned char* id = NULL;
 	bool id_last_initialized = false;
@@ -101,19 +101,23 @@ int main(int argc, char *argv[])
 		data = pcap_next(handle, &header);
 
 
-		if (data == NULL || packet_num > 2000) {
+		if (data == NULL || packet_num > 2000) { // analyze first 2000 packets for hidden transmission (analyzing whole pcap is very slow)
 			std::cout << "Nie znaleziono ukrytej transmisji!" << std::endl;
 			system("pause");
 			pcap_close(handle);
 			return 0;
 		}
+
 		++packet_num;
-		struct sniff_ip *ip = (struct sniff_ip*)(data + SIZE_ETHERNET); /* The IP header */
+
+		//get pointers to ip and tcp headers
+		struct sniff_ip *ip = (struct sniff_ip*)(data + SIZE_ETHERNET); //IP header
 		int size_ip = IP_HL(ip) * 4;
-		struct sniff_tcp* tcp = (struct sniff_tcp*)(data + SIZE_ETHERNET + size_ip);
-		if (header.len > SIZE_ETHERNET + size_ip && tcp->th_sport == 16415) {
+		struct sniff_tcp* tcp = (struct sniff_tcp*)(data + SIZE_ETHERNET + size_ip); //tcp header
+
+		if (header.len > SIZE_ETHERNET + size_ip && tcp->th_sport == 16415) { //checks for hidden message when frame contains payload and port is 8000 (16415 if 2 bits are swapped)
 			id = reinterpret_cast<unsigned char*>(&(ip->ip_id));
-			if (id_last_initialized) {
+			if (id_last_initialized) { //skip searching for hidden messagage with 1st run
 				id_last_initialized = false;
 				id_last = id[1];
 			}
